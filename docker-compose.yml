@@ -1,0 +1,24 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: db-edu-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db_edu
+      MYSQL_USER: db_edu
+      MYSQL_PASSWORD: db_edu
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --innodb_flush_log_at_trx_commit=1
+      - --performance-schema=ON
+      - --innodb-buffer-pool-size=64M
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:
+    name: db-edu-mysql-data
