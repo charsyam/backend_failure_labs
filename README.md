@@ -1,106 +1,286 @@
-# Spring Boot + JPA 장애 재현 실습
+# DB 실습 프로젝트
 
-Spring Boot + Kotlin + JPA + MySQL 8 환경에서 운영 중 발생할 수 있는 DB/JPA 장애를 재현하는 실습 프로젝트입니다.
+Spring Boot, Kotlin, JPA와 MySQL을 사용하는 데이터베이스 실습 프로젝트입니다. `lab1`부터 `lab5`까지 각각 독립된 Gradle 프로젝트이며, 모든 lab은 같은 MySQL 데이터베이스를 이어서 사용합니다.
 
-이 코드는 의도적으로 문제 상황만 포함합니다. Optimistic Lock, Pessimistic Lock, Unique Constraint, Batch Insert, Cursor Pagination, Covering Index 같은 해결책은 구현하지 않았습니다.
+## 준비
 
-## 실행
+- Java 17
+- Docker 및 Docker Compose
+- `curl`
+- Bash
+- LAB 5 부하 생성 시 Python 3
+
+저장소 루트에서 MySQL을 실행합니다.
 
 ```bash
-docker compose up -d
-./gradlew bootRun
+docker compose up -d mysql
+docker compose ps
 ```
 
-기본 API 주소는 `http://localhost:8080` 입니다.
+MySQL 접속 정보의 기본값은 다음과 같습니다.
 
-## LAB 1 Lost Update
-
-서로 다른 API가 같은 `User` row를 동시에 읽고 각각 `likes`, `comments`를 1씩 증가시키면서, 나중에 커밋한 트랜잭션이 먼저 커밋한 변경을 덮어씁니다.
-
-```bash
-curl -X POST localhost:8080/labs/1-lost-update/reset
-
-curl -X POST 'localhost:8080/labs/1-lost-update/users/1/unsafe-likes?delta=1' &
-curl -X POST 'localhost:8080/labs/1-lost-update/users/1/unsafe-comments?delta=1' &
-wait
-
-sleep 1
-curl localhost:8080/labs/1-lost-update/users/1
+```text
+host: localhost
+port: 3307
+database: db_edu
+username: db_edu
+password: db_edu
 ```
 
-정상이라면 최종값은 `likes=1`, `comments=1`이어야 합니다. 최종값이 `likes=0, comments=1` 또는 `likes=1, comments=0`이면 한쪽 변경이 사라진 것입니다.
+각 lab은 기본적으로 `http://localhost:8080`에서 실행됩니다. 한 번에 하나의 lab만 실행하고, 다음 lab을 시작하기 전에 실행 중인 애플리케이션을 `Ctrl+C`로 종료합니다.
 
-동시 호출 타이밍을 직접 맞추기 어렵다면 스크립트를 사용합니다.
+데이터와 schema는 lab 사이에서 공유됩니다. 데이터를 유지하려면 `docker compose down -v`를 실행하지 않습니다.
+
+## LAB 1
+
+### 실행
+
+저장소 루트에서 다음 명령을 실행합니다.
 
 ```bash
-chmod +x scripts/lab1-lost-update.sh
-ROUNDS=100 ./scripts/lab1-lost-update.sh
+cd lab1
+../gradlew bootRun
 ```
 
-## LAB 2 Batch Insert 문제
+### 재현 및 확인
 
-1000건을 `save()` 반복 호출로 저장합니다. 건수가 커질수록 영속성 컨텍스트와 insert round-trip 비용이 커집니다.
+애플리케이션을 실행한 상태에서 새 터미널을 열고 저장소 루트에서 실행합니다.
 
 ```bash
-curl -X DELETE localhost:8080/labs/2-batch-insert/comments
-curl -X POST 'localhost:8080/labs/2-batch-insert/save-loop?rows=1000'
+bash lab1/scripts/reproduce-lost-update.sh
 ```
 
-## LAB 3 COUNT 성능 문제
-
-`status` 인덱스 없이 조건 COUNT를 실행합니다. `EXPLAIN`에서 full scan 여부를 확인합니다.
+호출 횟수와 동시성을 변경할 수 있습니다.
 
 ```bash
-curl -X POST 'localhost:8080/labs/3-count/seed?rows=100000&paidRatioPercent=80'
-curl -X POST localhost:8080/labs/3-count/slow-count
+ROUNDS=2000 CONCURRENCY=100 bash lab1/scripts/reproduce-lost-update.sh
 ```
 
-## LAB 4 Optimizer 실행계획 문제
-
-데이터 분포를 바꾸고 같은 조건 쿼리의 실행계획을 관찰합니다. 이 샘플은 인덱스를 제공하지 않으므로 기본적으로 나쁜 계획/스캔 비용을 확인하는 용도입니다.
+API를 직접 호출하려면 다음 명령을 사용합니다.
 
 ```bash
-curl -X POST 'localhost:8080/labs/4-optimizer/seed-selective?rows=100000'
-curl -X POST 'localhost:8080/labs/4-optimizer/explain?amountLessThan=500'
-curl -X POST 'localhost:8080/labs/4-optimizer/seed-low-selectivity?rows=100000'
-curl -X POST 'localhost:8080/labs/4-optimizer/explain-analyze?amountLessThan=500'
+curl -X POST http://localhost:8080/posts/reset
+curl http://localhost:8080/posts/1
+curl -X POST http://localhost:8080/posts/1/likes
+curl -X POST http://localhost:8080/posts/1/comments
 ```
 
-## LAB 5 Transaction Visibility
-
-트랜잭션 내부에서 주문을 생성한 뒤 커밋 전에 상대 서비스 큐로 주문 id 메시지를 보냅니다. 상대 서비스 consumer가 메시지를 받자마자 우리 주문 조회 API를 호출하면 아직 커밋 전이라 404를 받을 수 있습니다.
+### 테스트
 
 ```bash
-curl -X POST 'localhost:8080/labs/5-transaction-visibility/bad?userId=1&sleepBeforeCommitMs=1000'
-curl 'localhost:8080/labs/5-transaction-visibility/partner-attempts'
+cd lab1
+../gradlew test
 ```
 
-## LAB 6 Check-Then-Insert
+## LAB 2
 
-동일 사용자의 동일 정책 쿠폰 발급 요청이 동시에 들어오면 `exists` 확인 후 insert 사이에서 중복 발급이 발생합니다.
+### 실행
 
 ```bash
-curl -X DELETE localhost:8080/labs/6-check-then-insert/coupons
-
-curl -X POST 'localhost:8080/labs/6-check-then-insert/unsafe?userId=1&policyId=100&sleepMs=2000' &
-curl -X POST 'localhost:8080/labs/6-check-then-insert/unsafe?userId=1&policyId=100&sleepMs=2000' &
-wait
+cd lab2
+../gradlew bootRun
 ```
 
-## LAB 7 Entity 조회 문제
+### 재현 및 확인
 
-필요한 컬럼만 조회하지 않고 `Order` Entity 전체를 조회합니다.
+애플리케이션을 실행한 상태에서 새 터미널을 열고 저장소 루트에서 실행합니다.
 
 ```bash
-curl -X POST 'localhost:8080/labs/7-projection-covering-index/seed?rows=100000'
-curl 'localhost:8080/labs/7-projection-covering-index/entity?status=PAID&size=100'
+bash lab2/scripts/create-1000-posts.sh
+curl 'http://localhost:8080/posts?limit=20'
 ```
 
-## LAB 8 Offset Pagination 문제
-
-대량 데이터에서 깊은 page를 offset 방식으로 조회합니다.
+저장 건수를 변경할 수 있습니다.
 
 ```bash
-curl -X POST 'localhost:8080/labs/8-pagination/seed?rows=200000&userId=1'
-curl 'localhost:8080/labs/8-pagination/offset?userId=1&page=1000&size=20'
+COUNT=5000 bash lab2/scripts/create-1000-posts.sh
+COUNT=100000 bash lab2/scripts/create-1000-posts.sh
+```
+
+API를 직접 호출하려면 다음 명령을 사용합니다.
+
+```bash
+curl -X POST 'http://localhost:8080/posts/bulk?count=1000'
+curl 'http://localhost:8080/posts?limit=20'
+```
+
+### 테스트
+
+```bash
+cd lab2
+../gradlew test
+```
+
+## LAB 3
+
+LAB 3는 `posts` 데이터를 사용합니다. 데이터가 없다면 LAB 2를 실행한 상태에서 먼저 데이터를 적재합니다.
+
+```bash
+COUNT=100000 bash lab2/scripts/create-1000-posts.sh
+```
+
+LAB 2를 종료한 뒤 LAB 3를 실행합니다.
+
+### 실행
+
+```bash
+cd lab3
+../gradlew bootRun
+```
+
+### 재현 및 확인
+
+애플리케이션을 실행한 상태에서 새 터미널을 열고 저장소 루트에서 실행합니다.
+
+```bash
+curl 'http://localhost:8080/posts/page?page=0&size=20'
+REQUESTS=10 bash lab3/scripts/request-pages.sh
+```
+
+페이지와 반복 횟수를 변경할 수 있습니다.
+
+```bash
+REQUESTS=20 PAGE=10 SIZE=50 bash lab3/scripts/request-pages.sh
+```
+
+MySQL에서 인덱스와 실행계획을 확인합니다.
+
+```bash
+docker exec -it db-edu-mysql mysql -udb_edu -pdb_edu db_edu \
+  -e "SHOW INDEX FROM posts; EXPLAIN ANALYZE SELECT COUNT(*) FROM posts;"
+```
+
+### 테스트
+
+```bash
+cd lab3
+../gradlew test
+```
+
+## LAB 4
+
+### 실행
+
+처음 실행해 `orders` 테이블을 생성합니다.
+
+```bash
+cd lab4
+../gradlew bootRun
+```
+
+### 데이터 준비
+
+애플리케이션을 실행한 상태에서 새 터미널을 열고 저장소 루트에서 실행합니다.
+
+```bash
+bash lab4/scripts/seed.sh
+```
+
+데이터 건수를 변경할 수 있습니다.
+
+```bash
+ROWS=100000 bash lab4/scripts/seed.sh
+```
+
+### 재현 및 확인
+
+```bash
+curl 'http://localhost:8080/orders/search?amountLessThan=500'
+curl -X POST 'http://localhost:8080/orders/explain?amountLessThan=500'
+curl -X POST 'http://localhost:8080/orders/explain-analyze?amountLessThan=500'
+```
+
+MySQL에서 직접 실행계획을 확인할 수도 있습니다.
+
+```bash
+docker exec -it db-edu-mysql mysql -udb_edu -pdb_edu db_edu \
+  -e "SHOW INDEX FROM orders; EXPLAIN ANALYZE SELECT * FROM orders WHERE amount < 500;"
+```
+
+### 테스트
+
+```bash
+cd lab4
+../gradlew test
+```
+
+## LAB 5
+
+### 실행
+
+처음 실행해 `orders` 테이블을 생성하거나 기존 schema를 확인합니다.
+
+```bash
+cd lab5
+../gradlew bootRun
+```
+
+### 데이터 준비
+
+애플리케이션을 실행한 상태에서 새 터미널을 열고 저장소 루트에서 실행합니다.
+
+```bash
+bash lab5/scripts/seed.sh
+```
+
+데이터 건수를 변경할 수 있습니다.
+
+```bash
+ROWS=200000 bash lab5/scripts/seed.sh
+```
+
+### 재현 및 확인
+
+터미널 하나에서 조회 시간을 반복 확인합니다.
+
+```bash
+bash lab5/scripts/watch-search.sh
+```
+
+다른 터미널에서 부하를 생성합니다.
+
+```bash
+bash lab5/scripts/generate-load.sh
+```
+
+부하 크기와 속도를 변경할 수 있습니다.
+
+```bash
+TOTAL=1000 RATE=20 AMOUNT=0 bash lab5/scripts/generate-load.sh
+```
+
+조회 조건과 간격을 변경할 수 있습니다.
+
+```bash
+AMOUNT_LESS_THAN=500 INTERVAL=1 bash lab5/scripts/watch-search.sh
+```
+
+API를 직접 호출하려면 다음 명령을 사용합니다.
+
+```bash
+curl -X POST 'http://localhost:8080/orders?customer=buyer&amount=0'
+curl 'http://localhost:8080/orders/search?amountLessThan=500'
+curl -X POST 'http://localhost:8080/orders/explain?amountLessThan=500'
+curl -X POST 'http://localhost:8080/orders/explain-analyze?amountLessThan=500'
+```
+
+### 테스트
+
+```bash
+cd lab5
+../gradlew test
+```
+
+## 종료
+
+애플리케이션은 실행 중인 터미널에서 `Ctrl+C`로 종료합니다. MySQL 컨테이너만 종료하려면 저장소 루트에서 실행합니다.
+
+```bash
+docker compose stop mysql
+```
+
+다시 시작할 때는 다음 명령을 사용합니다.
+
+```bash
+docker compose start mysql
 ```
