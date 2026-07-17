@@ -21,7 +21,7 @@ class PostService(
                 postRepository.save(
                     Post(
                         title = "Batch post $i",
-                        content = buildContent(i),
+                        content = createContent(i),
                     ),
                 )
             }
@@ -39,6 +39,11 @@ class PostService(
         val prefix = "Batch insert practice $i "
         val body = FILLER.repeat(CONTENT_LENGTH / FILLER.length + 1)
         return (prefix + body).take(CONTENT_LENGTH)
+    }
+
+    private fun createContent(sequence: Int): String {
+        val prefix = "Batch insert practice $sequence "
+        return prefix.padEnd(300, 'x')
     }
 
     @Transactional(readOnly = true)
