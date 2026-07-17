@@ -35,8 +35,6 @@ class PostService(
         )
     }
 
-    // content 를 약 1KB 로 채운다. content TEXT 가 커질수록 posts 의 clustered PK(전체 행)도
-    // 커지므로, 이후 COUNT(*) 최적화 실습에서 secondary index 스캔과의 차이가 뚜렷해진다.
     private fun buildContent(i: Int): String {
         val prefix = "Batch insert practice $i "
         val body = FILLER.repeat(CONTENT_LENGTH / FILLER.length + 1)
