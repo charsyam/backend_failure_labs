@@ -1,11 +1,11 @@
-package com.charsyam.minisns
+package com.charsyam.lab5
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
 @SpringBootApplication
-class MiniSnsApplication
+class Lab5Application
 
 fun main(args: Array<String>) {
-    runApplication<MiniSnsApplication>(*args)
+    runApplication<Lab5Application>(*args)
 }

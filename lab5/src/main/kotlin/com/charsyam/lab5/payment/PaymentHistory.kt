@@ -1,4 +1,4 @@
-package com.charsyam.minisns.order
+package com.charsyam.lab5.payment
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -11,18 +11,18 @@ import java.time.LocalDateTime
 
 @Entity
 @Table(
-    name = "orders",
-    indexes = [Index(name = "idx_orders_amount", columnList = "amount")],
+    name = "lab5_payment_histories",
+    indexes = [Index(name = "idx_lab5_history_order_id", columnList = "order_id")],
 )
-class Order(
-    @Column(nullable = false, length = 100)
-    val customer: String,
+class PaymentHistory(
+    @Column(name = "order_id", nullable = false)
+    val orderId: Long,
+
+    @Column(name = "wallet_id", nullable = false)
+    val walletId: Long,
 
     @Column(nullable = false)
     val amount: Long,
-
-    @Column(nullable = false, length = 300)
-    val note: String,
 
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),

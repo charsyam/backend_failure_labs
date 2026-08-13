@@ -12,4 +12,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "mini-sns"
+rootProject.name = "item-indexing-lab"
+include("item-service", "search-service")

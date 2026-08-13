@@ -7,7 +7,9 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories { mavenCentral() }
+    repositories {
+        mavenCentral()
+    }
 }
 
-rootProject.name = "lab5-wallet-batch-payment"
+rootProject.name = "mini-sns"
